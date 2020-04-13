@@ -1,20 +1,15 @@
 use std;
 use librespot::core::session::Session;
-use librespot::playback::player::PlayerEventChannel;
 use librespot::playback::player::PlayerEvent;
 
-use std::io::ErrorKind;
-use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
 use librespot::connect::spirc::Spirc;
 
 use websocket::client::ClientBuilder;
-use websocket::{Message, OwnedMessage};
+use websocket::OwnedMessage;
 use serde_json::json;
-use serde_json::{Value};
-use librespot_core::util;
+use serde_json::Value;
 
 #[derive(Clone, Debug)]
 pub struct RemoteWsConfig {
@@ -27,7 +22,6 @@ pub struct RemoteWs {
 }
 
 struct RemoteWsThread {
-    config: RemoteWsConfig,
     ws_rx: websocket::receiver::Reader<std::net::TcpStream>,
     spirc: Arc<Spirc>,
 }
@@ -36,9 +30,7 @@ impl RemoteWs {
     pub fn new(
         config: RemoteWsConfig,
         spirc: Arc<Spirc>,
-    ) -> (RemoteWs) {
-        println!("REMOTEWS!!");
-
+    ) -> RemoteWs {
         println!("Connecting to {:?}", config.uri);
 
         let _client = ClientBuilder::new(&config.uri)
@@ -47,7 +39,7 @@ impl RemoteWs {
             .connect_insecure()
             .unwrap();
 
-        let (mut receiver, mut sender) = _client.split().unwrap();
+        let (receiver, sender) = _client.split().unwrap();
 
         println!("Successfully connected");
 
@@ -55,7 +47,6 @@ impl RemoteWs {
             println!("Starting new RemoteWsThread[]");
 
             let remote_ws_thread = RemoteWsThread {
-                config: config,
                 ws_rx: receiver,
                 spirc: spirc,
             };
@@ -63,26 +54,25 @@ impl RemoteWs {
             remote_ws_thread.run();
         });
     
-        (RemoteWs {
+        RemoteWs {
             thread_handle: Some(handle),
             ws_tx: sender,
-        })
+        }
     }
 
     pub fn handle_event(&mut self, event: PlayerEvent) {
-        println!("handle_event");
         match event {
             PlayerEvent::Changed {
                 old_track_id,
                 new_track_id,
             } => {
-                println!("Changed");
+                println!("Changed {:?} to {:?}", old_track_id, new_track_id);
             }
             PlayerEvent::Started { track_id, .. } => {
-                println!("Started");
+                println!("Started {:?}", track_id);
             }
             PlayerEvent::Stopped { track_id, .. } => {
-                println!("Stopped");
+                println!("Stopped {:?}", track_id);
             }
             PlayerEvent::VolumeSet { volume, .. } => {
                 let mixer_volume = f64::from(volume) / f64::from(u16::max_value()) * 100.0;
@@ -121,29 +111,19 @@ impl RemoteWsThread {
                     return;
                 }
                 OwnedMessage::Text(text) => {
-                    println!("txt msg: {:?}", text);
-
+                    // println!("txt msg: {:?}", text);
                     let v: Value = serde_json::from_str(&text).unwrap();
 
-                    // Access parts of the data by indexing with square brackets.
-                    println!("method {} at the vol {}", v["method"], v["params"]);
-                    if(v["method"] == "volumeChanged") {
-                        let mut volume: f64 = v["params"].as_f64().unwrap();
+                    if v["method"] == "volumeChanged" {
+                        let volume: f64 = v["params"].as_f64().unwrap();
                         let new_volume = (volume * f64::from(u16::max_value())) / 100.0;
 
                         println!("new volume {}, conv: {}", volume, new_volume);
+
                         self.spirc.volume_set(new_volume as u16);
-                        // let mixer_volume = f64::from(volume) / f64::from(u16::max_value()) * 100.0;
-
-                        // self.spirc.volume_up();
                     }
-
-                    // let c: futures::sync::mpsc::UnboundedSender<PlayerCommand> = cmd_rx;
-                    // cmd_tx.unbounded_send(PlayerCommand::EmitVolumeSetEvent(20));
-                    //.command(PlayerCommand::EmitVolumeSetEvent(20));
-                    //commands.as_ref().unwrap().unbounded_send(PlayerCommand::EmitVolumeSetEvent(20)).unwrap();
                 }
-                
+
                 // Say what we received
                 _ => {
                     println!("Receive Loop: {:?}", message);
