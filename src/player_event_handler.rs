@@ -33,6 +33,9 @@ pub fn run_program_on_events(event: PlayerEvent, onevent: &str) -> Option<io::Re
             env_vars.insert("PLAYER_EVENT", "stop".to_string());
             env_vars.insert("TRACK_ID", track_id.to_base62());
         }
+        PlayerEvent::VolumeSet { volume, .. } => {
+            println!("Volume set: {}", volume);
+        }
         _ => return None,
     }
     Some(run_program(onevent, env_vars))

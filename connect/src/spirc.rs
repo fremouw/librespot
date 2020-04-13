@@ -74,6 +74,7 @@ pub enum SpircCommand {
     Next,
     VolumeUp,
     VolumeDown,
+    VolumeSet(u16),
     Shutdown,
 }
 
@@ -336,6 +337,9 @@ impl Spirc {
     pub fn volume_down(&self) {
         let _ = self.commands.unbounded_send(SpircCommand::VolumeDown);
     }
+    pub fn volume_set(&self, volume: u16) {
+        let _ = self.commands.unbounded_send(SpircCommand::VolumeSet(volume));
+    }
     pub fn shutdown(&self) {
         let _ = self.commands.unbounded_send(SpircCommand::Shutdown);
     }
@@ -527,6 +531,14 @@ impl SpircTask {
                     self.notify(None, true);
                 } else {
                     CommandSender::new(self, MessageType::kMessageTypeVolumeUp).send();
+                }
+            }
+            SpircCommand::VolumeSet(volume) => {
+                if active {
+                    self.handle_volume_set(volume);
+                    self.notify(None, true);
+                } else {
+                    // CommandSender::new(self, MessageType::kMessageTypeVolumeUp).send();
                 }
             }
             SpircCommand::VolumeDown => {
@@ -785,6 +797,7 @@ impl SpircTask {
             }
 
             MessageType::kMessageTypeVolume => {
+                debug!("set_volume");
                 self.set_volume(frame.get_volume() as u16);
                 self.notify(None, true);
             }
@@ -1003,6 +1016,19 @@ impl SpircTask {
         self.set_volume(volume as u16);
     }
 
+    fn handle_volume_set(&mut self, volume: u16) {
+        // let mut volume: u32 = self.device.get_volume() as u32 + 4096;
+        // if volume > 0xFFFF {
+        //     volume = 0xFFFF;
+        // }
+        // self.set_volume(volume);
+        debug!("aaaxxx set_volume: {}", volume);
+        self.device.set_volume(volume as u32);
+        if let Some(cache) = self.session.cache() {
+            cache.save_volume(Volume { volume })
+        }
+    }
+    
     fn handle_end_of_track(&mut self) {
         self.handle_next();
         self.notify(None, true);
@@ -1228,9 +1254,10 @@ impl SpircTask {
     }
 
     fn set_volume(&mut self, volume: u16) {
+        debug!("xxx set_volume: {}", volume);
         self.device.set_volume(volume as u32);
-        self.mixer
-            .set_volume(volume_to_mixer(volume, self.config.linear_volume));
+        // self.mixer
+        //     .set_volume(volume_to_mixer(volume, self.config.linear_volume));
         if let Some(cache) = self.session.cache() {
             cache.save_volume(Volume { volume })
         }

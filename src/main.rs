@@ -29,6 +29,10 @@ use librespot::playback::player::{Player, PlayerEvent};
 mod player_event_handler;
 use crate::player_event_handler::run_program_on_events;
 
+use std::sync::Arc;
+mod remote_ws;
+use remote_ws::{RemoteWs, RemoteWsConfig};
+
 fn device_id(name: &str) -> String {
     hex::encode(Sha1::digest(name.as_bytes()))
 }
@@ -82,6 +86,7 @@ struct Setup {
     player_config: PlayerConfig,
     session_config: SessionConfig,
     connect_config: ConnectConfig,
+    remotews_config: RemoteWsConfig,
     mixer_config: MixerConfig,
     credentials: Option<Credentials>,
     enable_discovery: bool,
@@ -185,6 +190,12 @@ fn setup(args: &[String]) -> Setup {
             "",
             "disable-gapless",
             "disable gapless playback.",
+        )
+        .optopt(
+            "",
+            "remote-ws",
+            "The URI of the websocket server.",
+            "WS_URI",
         );
 
     let matches = match opts.parse(&args[1..]) {
@@ -344,6 +355,12 @@ fn setup(args: &[String]) -> Setup {
         }
     };
 
+    let remotews_config = {
+        RemoteWsConfig {
+            uri: matches.opt_str("remote-ws").unwrap_or(String::from("none")),
+        }
+    };
+
     let enable_discovery = !matches.opt_present("disable-discovery");
 
     Setup {
@@ -352,6 +369,7 @@ fn setup(args: &[String]) -> Setup {
         session_config: session_config,
         player_config: player_config,
         connect_config: connect_config,
+        remotews_config: remotews_config,
         credentials: credentials,
         device: device,
         enable_discovery: enable_discovery,
@@ -367,6 +385,7 @@ struct Main {
     player_config: PlayerConfig,
     session_config: SessionConfig,
     connect_config: ConnectConfig,
+    remotews_config: RemoteWsConfig,
     backend: fn(Option<String>) -> Box<dyn Sink>,
     device: Option<String>,
     mixer: fn(Option<MixerConfig>) -> Box<dyn Mixer>,
@@ -376,7 +395,7 @@ struct Main {
     discovery: Option<DiscoveryStream>,
     signal: IoStream<()>,
 
-    spirc: Option<Spirc>,
+    spirc: Option<Arc<Spirc>>,
     spirc_task: Option<SpircTask>,
     connect: Box<dyn Future<Item = Session, Error = io::Error>>,
 
@@ -386,6 +405,7 @@ struct Main {
 
     player_event_channel: Option<UnboundedReceiver<PlayerEvent>>,
     player_event_program: Option<String>,
+    remote_ws: Option<RemoteWs>,
 }
 
 impl Main {
@@ -396,6 +416,7 @@ impl Main {
             session_config: setup.session_config,
             player_config: setup.player_config,
             connect_config: setup.connect_config,
+            remotews_config: setup.remotews_config,
             backend: setup.backend,
             device: setup.device,
             mixer: setup.mixer,
@@ -412,6 +433,8 @@ impl Main {
 
             player_event_channel: None,
             player_event_program: setup.player_event_program,
+
+            remote_ws: None,
         };
 
         if setup.enable_discovery {
@@ -472,6 +495,7 @@ impl Future for Main {
                     let mixer = (self.mixer)(Some(mixer_config));
                     let player_config = self.player_config.clone();
                     let connect_config = self.connect_config.clone();
+                    let remotews_config = self.remotews_config.clone();
 
                     let audio_filter = mixer.get_audio_filter();
                     let backend = self.backend;
@@ -481,10 +505,21 @@ impl Future for Main {
                             (backend)(device)
                         });
 
-                    let (spirc, spirc_task) = Spirc::new(connect_config, session, player, mixer);
-                    self.spirc = Some(spirc);
+                    let (spirc, spirc_task) = Spirc::new(connect_config, session.clone(), player, mixer);
+
+                    let spirc_ = Arc::new(spirc);
+
+                    // let spirc_task_ = Arc::new(spirc_task);
+
+                    // let event_channel_ = Arc::new(event_channel);
+
+                    // let remote_ws = RemoteWs::new(session.clone(), event_channel_.clone());
+                    let remote_ws = RemoteWs::new(remotews_config, spirc_.clone());
+
+                    self.spirc = Some(spirc_);
                     self.spirc_task = Some(spirc_task);
                     self.player_event_channel = Some(event_channel);
+                    self.remote_ws = Some(remote_ws);
 
                     progress = true;
                 }
@@ -543,20 +578,25 @@ impl Future for Main {
 
             if let Some(ref mut player_event_channel) = self.player_event_channel {
                 if let Async::Ready(Some(event)) = player_event_channel.poll().unwrap() {
-                    if let Some(ref program) = self.player_event_program {
-                        if let Some(child) = run_program_on_events(event, program) {
-                            let child = child
-                                .expect("program failed to start")
-                                .map(|status| {
-                                    if !status.success() {
-                                        error!("child exited with status {:?}", status.code());
-                                    }
-                                })
-                                .map_err(|e| error!("failed to wait on child process: {}", e));
-
-                            self.handle.spawn(child);
-                        }
+                    println!("Got event");
+                    if let Some(ref mut remote_ws) = self.remote_ws {
+                        remote_ws.handle_event(event);
                     }
+
+                    // if let Some(ref mut program) = self.player_event_program {
+                    //     if let Some(child) = run_program_on_events(event, program) {
+                    //         let child = child
+                    //             .expect("program failed to start")
+                    //             .map(|status| {
+                    //                 if !status.success() {
+                    //                     error!("child exited with status {:?}", status.code());
+                    //                 }
+                    //             })
+                    //             .map_err(|e| error!("failed to wait on child process: {}", e));
+
+                    //         self.handle.spawn(child);
+                    //     }
+                    // }
                 }
             }
 
