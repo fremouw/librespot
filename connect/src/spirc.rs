@@ -1001,7 +1001,7 @@ impl SpircTask {
     }
 
     fn handle_volume_up(&mut self) {
-        let mut volume: u32 = self.device.get_volume() as u32 + 4096;
+        let mut volume: u32 = self.device.get_volume() as u32 + 2048;
         if volume > 0xFFFF {
             volume = 0xFFFF;
         }
@@ -1009,7 +1009,7 @@ impl SpircTask {
     }
 
     fn handle_volume_down(&mut self) {
-        let mut volume: i32 = self.device.get_volume() as i32 - 4096;
+        let mut volume: i32 = self.device.get_volume() as i32 - 2048;
         if volume < 0 {
             volume = 0;
         }
@@ -1017,12 +1017,7 @@ impl SpircTask {
     }
 
     fn handle_volume_set(&mut self, volume: u16) {
-        // let mut volume: u32 = self.device.get_volume() as u32 + 4096;
-        // if volume > 0xFFFF {
-        //     volume = 0xFFFF;
-        // }
-        // self.set_volume(volume);
-        debug!("aaaxxx set_volume: {}", volume);
+        debug!("handle_volume_set volume: {}", volume);
         self.device.set_volume(volume as u32);
         if let Some(cache) = self.session.cache() {
             cache.save_volume(Volume { volume })
@@ -1254,7 +1249,7 @@ impl SpircTask {
     }
 
     fn set_volume(&mut self, volume: u16) {
-        debug!("xxx set_volume: {}", volume);
+        debug!("set_volume: {}", volume);
         self.device.set_volume(volume as u32);
         // self.mixer
         //     .set_volume(volume_to_mixer(volume, self.config.linear_volume));
