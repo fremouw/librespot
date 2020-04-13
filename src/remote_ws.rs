@@ -19,6 +19,7 @@ pub struct RemoteWsConfig {
 pub struct RemoteWs {
     pub thread_handle: Option<thread::JoinHandle<()>>,
     ws_tx: websocket::sender::Writer<std::net::TcpStream>,
+    rpc_id: i64,
 }
 
 struct RemoteWsThread {
@@ -57,6 +58,7 @@ impl RemoteWs {
         RemoteWs {
             thread_handle: Some(handle),
             ws_tx: sender,
+            rpc_id: 1,
         }
     }
 
@@ -79,8 +81,11 @@ impl RemoteWs {
         
                 println!("set_volume: {} converted {}", volume, mixer_volume);
         
+                let id = self.rpc_id;
+                self.rpc_id += 1;
+
                 let cmd = json!({
-                    "id": 1,
+                    "id": id,
                     "method": "setVolume",
                     "params": mixer_volume.round(),
                 });
