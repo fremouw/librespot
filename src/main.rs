@@ -403,7 +403,7 @@ struct Main {
     last_credentials: Option<Credentials>,
     auto_connect_times: Vec<Instant>,
 
-    player_event_channel: Option<UnboundedReceiver<PlayerEvent>>,
+    // player_event_channel: Option<UnboundedReceiver<PlayerEvent>>,
     player_event_program: Option<String>,
     remote_ws: Option<RemoteWs>,
 }
@@ -431,7 +431,7 @@ impl Main {
             auto_connect_times: Vec::new(),
             signal: Box::new(tokio_signal::ctrl_c().flatten_stream()),
 
-            player_event_channel: None,
+            // player_event_channel: None,
             player_event_program: setup.player_event_program,
 
             remote_ws: None,
@@ -509,16 +509,12 @@ impl Future for Main {
 
                     let spirc_ = Arc::new(spirc);
 
-                    // let spirc_task_ = Arc::new(spirc_task);
-
-                    // let event_channel_ = Arc::new(event_channel);
-
-                    // let remote_ws = RemoteWs::new(session.clone(), event_channel_.clone());
-                    let remote_ws = RemoteWs::new(remotews_config, spirc_.clone());
+                    let remote_ws = RemoteWs::new(remotews_config, spirc_.clone(), event_channel);
 
                     self.spirc = Some(spirc_);
                     self.spirc_task = Some(spirc_task);
-                    self.player_event_channel = Some(event_channel);
+                    // self.player_event_channel = Some(event_channel);
+                    // self.player_event_channel = None;
                     self.remote_ws = Some(remote_ws);
 
                     progress = true;
@@ -576,29 +572,29 @@ impl Future for Main {
                 }
             }
 
-            if let Some(ref mut player_event_channel) = self.player_event_channel {
-                if let Async::Ready(Some(event)) = player_event_channel.poll().unwrap() {
-                    println!("Got event");
-                    if let Some(ref mut remote_ws) = self.remote_ws {
-                        remote_ws.handle_event(event);
-                    }
+            // if let Some(ref mut player_event_channel) = self.player_event_channel {
+            //     if let Async::Ready(Some(event)) = player_event_channel.poll().unwrap() {
+            //         println!("Got event");
+            //         if let Some(ref mut remote_ws) = self.remote_ws {
+            //             remote_ws.handle_event(event);
+            //         }
 
-                    // if let Some(ref mut program) = self.player_event_program {
-                    //     if let Some(child) = run_program_on_events(event, program) {
-                    //         let child = child
-                    //             .expect("program failed to start")
-                    //             .map(|status| {
-                    //                 if !status.success() {
-                    //                     error!("child exited with status {:?}", status.code());
-                    //                 }
-                    //             })
-                    //             .map_err(|e| error!("failed to wait on child process: {}", e));
+            //         // if let Some(ref mut program) = self.player_event_program {
+            //         //     if let Some(child) = run_program_on_events(event, program) {
+            //         //         let child = child
+            //         //             .expect("program failed to start")
+            //         //             .map(|status| {
+            //         //                 if !status.success() {
+            //         //                     error!("child exited with status {:?}", status.code());
+            //         //                 }
+            //         //             })
+            //         //             .map_err(|e| error!("failed to wait on child process: {}", e));
 
-                    //         self.handle.spawn(child);
-                    //     }
-                    // }
-                }
-            }
+            //         //         self.handle.spawn(child);
+            //         //     }
+            //         // }
+            //     }
+            // }
 
             if !progress {
                 return Ok(Async::NotReady);
