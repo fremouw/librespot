@@ -3,12 +3,9 @@ use log::{debug, error, info};
 use librespot::core::session::Session;
 use librespot::playback::player::{PlayerEvent, PlayerEventChannel};
 use std::sync::Arc;
-// use std::thread;
 use std::{thread, time};
 use librespot::connect::spirc::Spirc;
-
 use futures::{Async, Future, Poll, Stream};
-
 use std::sync::mpsc::channel;
 use websocket::client::ClientBuilder;
 use websocket::client::sync::Client;
@@ -16,6 +13,7 @@ use websocket::{Message, OwnedMessage};
 use url::Url;
 use serde_json::json;
 use serde_json::Value;
+use std::net::TcpStream;
 
 #[derive(Clone, Debug)]
 pub struct RemoteWsConfig {
@@ -35,7 +33,6 @@ struct RemoteWsInternal {
     ws_tx: Option<std::sync::mpsc::Sender<websocket::OwnedMessage>>,
     tx_thread_handle: Option<thread::JoinHandle<()>>,
     rx_thread_handle: Option<thread::JoinHandle<()>>,
-    // ws_client: Option<websocket::client::sync::Client<Autostream>>,
 }
 
 impl RemoteWs {
@@ -82,8 +79,14 @@ impl Future for RemoteWsInternal {
                     self.handle_event(event);
                 },
                 Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
-                Ok(Async::NotReady) => (),
-                Err(_) => debug!("errrrorrrr"),
+                Ok(Async::NotReady) => {
+                    debug!("NotReady");
+                    return Ok(Async::NotReady);
+                },
+                Err(e) => {
+                    debug!("errrrorrrr");
+                    return Err(From::from(e));
+                },
             };
 
             thread::sleep(time::Duration::from_millis(1));
@@ -92,25 +95,36 @@ impl Future for RemoteWsInternal {
 }
 
 impl RemoteWsInternal {
-    fn disconnect(&mut self) {
+    pub fn disconnect(&mut self) {
         debug!("disconnect RemoteWs");
 
-        // if let Some(ref mut ws_tx) = self.ws_tx {
-        //     match ws_tx.send(&Message::close()) {
-        //         Ok(()) => (),
-        //         Err(_) => debug!("Already closed?"),
-        //     };
-        // }
+        if let Some(ref mut ws_tx) = self.ws_tx {
+            match ws_tx.send(OwnedMessage::Close(None)) {
+                Ok(_) => (),
+                Err(_) => debug!("RemoteWs send panicked!"),
+            };
+        }
 
         self.ws_tx = None;
 
-        if let Some(handle) = self.rx_thread_handle.take() {
+        if let Some(handle) = self.tx_thread_handle.take() {
             match handle.join() {
-                Ok(_) => debug!("Closed RemoteWs thread"),
-                Err(_) => debug!("RemoteWs panicked!"),
+                Ok(_) => debug!("Closed RemoteWs tx thread"),
+                Err(_) => debug!("RemoteWs tx panicked!"),
             };
         } else {
-            debug!("Unable to exit RemoteWs");
+            debug!("Unable to exit tx RemoteWs");
+        }
+        
+        self.tx_thread_handle = None;
+
+        if let Some(handle) = self.rx_thread_handle.take() {
+            match handle.join() {
+                Ok(_) => debug!("Closed RemoteWs rx thread"),
+                Err(_) => debug!("RemoteWs rx panicked!"),
+            };
+        } else {
+            debug!("Unable to exit rx RemoteWs");
         }
 
         self.rx_thread_handle = None;
@@ -123,17 +137,18 @@ impl RemoteWsInternal {
 
         let uri = Url::parse(&self.config.uri).unwrap();
 
-        let client = ClientBuilder::new(&uri.to_string())
-            .unwrap()
-            .add_protocol("rust-websocket")
-            .connect_insecure()
-            .unwrap();
+        let _client = match ClientBuilder::new(&uri.to_string()).unwrap().connect_insecure() {
+            Ok(c) => c,
+            Err(e) => {
+                error!("xxxx {:?}", e);
+                return;
+            }
+        };
 
         info!("Successfully connected");
-        
-        self.ws_reconnect_count = 0;
 
-        let (mut receiver, mut sender) = client.split().unwrap();
+        let (mut receiver, mut sender) = _client.split().unwrap();
+    
         let (tx, rx) = channel();
 
         let tx_1 = tx.clone();
@@ -224,10 +239,8 @@ impl RemoteWsInternal {
         });
 
         self.rx_thread_handle = Some(_rx_handle);
-
-        debug!("RemoteWsInternal::connect::end");
     }
-    
+
     fn handle_event(&mut self, event: PlayerEvent) {
         debug!("RemoteWsInternal::handle_event");
 
@@ -270,7 +283,8 @@ impl RemoteWsInternal {
                             debug!("ERROR sending message: {:?}", e);
 
                             self.disconnect();
-                            // self.connect();
+
+                            self.connect();
 						}
                     };
                 }
@@ -297,33 +311,6 @@ impl Drop for RemoteWsInternal {
     fn drop(&mut self) {
         debug!("drop RemoteWsInternal");
 
-        drop(self.ws_tx.take());
-
-       // drop(self.ws_rx.take());
-
-        // if let Some(handle) = self.rx_thread_handle.take() {
-        //     match handle.join() {
-        //         Ok(_) => debug!("Closed RemoteWs rx thread"),
-        //         Err(_) => debug!("RemoteWs rx panicked!"),
-        //     };
-        // }
-
-        // if let Some(handle) = self.tx_thread_handle.take() {
-        //     match handle.join() {
-        //         Ok(_) => debug!("Closed RemoteWs tx thread"),
-        //         Err(_) => debug!("RemoteWs tx panicked!"),
-        //     };
-        // }
-
-        debug!("drop RemoteWsInternal dropped");
-        // drop(self.task_tx.take());
-        // if let Some(handle) = self.thread_handle.take() {
-        //     match handle.join() {
-        //         Ok(_) => debug!("Closed RemoteWs thread"),
-        //         Err(_) => error!("RemoteWs panicked!"),
-        //     }
-        // } else {
-        //     warn!("Unable to drop RemoteWs");
-        // }
+        self.disconnect();
     }
 }
