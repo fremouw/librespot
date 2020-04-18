@@ -238,7 +238,13 @@ impl RemoteWsInternal {
 
         self.rx_thread_handle = Some(_rx_handle);
 
+        // let power_param = json!("On");
+        // self.send_command("setPowerState".to_string(), power_param);
+
         self.handle_event(PlayerEvent::VolumeSet { volume: self.config.volume });
+
+        let param = json!("TAPE");
+        self.send_command("setInputSource".to_string(), param);
     }
 
     fn handle_event(&mut self, event: PlayerEvent) {
@@ -262,33 +268,37 @@ impl RemoteWsInternal {
                 self.disconnect();
             }
             PlayerEvent::VolumeSet { volume, .. } => {
-                let mixer_volume = f64::from(volume) / f64::from(u16::max_value()) * 100.0;
-        
-                debug!("set_volume: {} converted {}", volume, mixer_volume);
-        
-                let id = self.rpc_next_id;
-                self.rpc_next_id += 1;
+                let converted_volume = f64::from(volume) / f64::from(u16::max_value()) * 100.0;
 
-                let _cmd = json!({
-                    "id": id,
-                    "method": "setVolume",
-                    "params": mixer_volume.round(),
-                });
-        
-                if let Some(ref mut ws_tx) = self.ws_tx {
-                    match ws_tx.send(OwnedMessage::Text(_cmd.to_string())) {
-                        Ok(()) => (),
-						Err(e) => {
-                            debug!("ERROR sending message: {:?}", e);
-
-                            self.disconnect();
-
-                            self.connect();
-						}
-                    };
-                }
+                let param = json!(converted_volume.round() as u32);
+                self.send_command("setVolume".to_string(), param);
             }
             _ => return,
+        }
+    }
+
+    fn send_command(&mut self, method: String, params: serde_json::Value) {
+        let id = self.rpc_next_id;
+        self.rpc_next_id += 1;
+
+        let _cmd = json!({
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+
+        debug!("JSON: {}", _cmd.to_string());
+        if let Some(ref mut ws_tx) = self.ws_tx {
+            match ws_tx.send(OwnedMessage::Text(_cmd.to_string())) {
+                Ok(()) => (),
+                Err(e) => {
+                    debug!("ERROR sending message: {:?}", e);
+
+                    self.disconnect();
+
+                    self.connect();
+                }
+            };
         }
     }
 }
