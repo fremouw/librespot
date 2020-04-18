@@ -1,5 +1,5 @@
 use std;
-use log::{debug, error, info};
+use log::{debug, info};
 use librespot::playback::player::{PlayerEvent, PlayerEventChannel};
 use std::sync::Arc;
 use std::{thread, time};
@@ -7,17 +7,16 @@ use librespot::connect::spirc::Spirc;
 use futures::{Async, Future, Poll, Stream};
 use std::sync::mpsc::channel;
 use websocket::client::ClientBuilder;
-use websocket::client::sync::Client;
 use websocket::{Message, OwnedMessage};
 use url::Url;
 use serde_json::json;
 use serde_json::Value;
-use std::net::TcpStream;
 
 #[derive(Clone, Debug)]
 pub struct RemoteWsConfig {
     pub uri: String,
     pub volume: u16,
+    pub input_source: Option<String>,
 }
 
 pub struct RemoteWs {
@@ -41,7 +40,7 @@ impl RemoteWs {
         event_channel: PlayerEventChannel,
     ) -> RemoteWs {
         let _handle = thread::spawn(move || { 
-            debug!("Starting new RemoteWsThread[]");
+            debug!("starting new RemoteWsThread");
 
             let internal = RemoteWsInternal {
                 config: config,
@@ -54,7 +53,6 @@ impl RemoteWs {
             };
 
             let _ = internal.wait();
-            debug!("Starting new RemoteWsThread[] finished");
         });
     
         RemoteWs {
@@ -68,8 +66,6 @@ impl Future for RemoteWsInternal {
     type Error = ();
 
     fn poll(&mut self) -> Poll<(), ()> {
-        debug!("RemoteWsInternal::poll");
-
         loop {
             let ref mut event_channel_ = self.event_channel;
             match event_channel_.poll() {
@@ -78,11 +74,9 @@ impl Future for RemoteWsInternal {
                 },
                 Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
                 Ok(Async::NotReady) => {
-                    debug!("NotReady");
                     return Ok(Async::NotReady);
                 },
                 Err(e) => {
-                    debug!("errrrorrrr");
                     return Err(From::from(e));
                 },
             };
@@ -94,12 +88,12 @@ impl Future for RemoteWsInternal {
 
 impl RemoteWsInternal {
     pub fn disconnect(&mut self) {
-        debug!("disconnect RemoteWs");
+        debug!("disconnect");
 
         if let Some(ref mut ws_tx) = self.ws_tx {
             match ws_tx.send(OwnedMessage::Close(None)) {
                 Ok(_) => (),
-                Err(_) => debug!("RemoteWs send panicked!"),
+                Err(_) => debug!("error sending close message"),
             };
         }
 
@@ -107,43 +101,38 @@ impl RemoteWsInternal {
 
         if let Some(handle) = self.tx_thread_handle.take() {
             match handle.join() {
-                Ok(_) => debug!("Closed RemoteWs tx thread"),
-                Err(_) => debug!("RemoteWs tx panicked!"),
+                Ok(_) => debug!("closed send thread"),
+                Err(_) => debug!("error closing send thread"),
             };
         } else {
-            debug!("Unable to exit tx RemoteWs");
+            debug!("unable to exit send thread");
         }
         
         self.tx_thread_handle = None;
 
         if let Some(handle) = self.rx_thread_handle.take() {
             match handle.join() {
-                Ok(_) => debug!("Closed RemoteWs rx thread"),
-                Err(_) => debug!("RemoteWs rx panicked!"),
+                Ok(_) => debug!("closed receive thread"),
+                Err(_) => debug!("error closing receive thread"),
             };
         } else {
-            debug!("Unable to exit rx RemoteWs");
+            debug!("unable to exit receive thread");
         }
 
         self.rx_thread_handle = None;
-
-        debug!("disconnect RemoteWs end");
     }
 
     fn connect(&mut self) {
-        debug!("RemoteWsInternal::connect");
-
         let uri = Url::parse(&self.config.uri).unwrap();
 
         let _client = match ClientBuilder::new(&uri.to_string()).unwrap().connect_insecure() {
             Ok(c) => c,
             Err(e) => {
-                error!("xxxx {:?}", e);
-                return;
+                panic!("can't connect to {}, error {:?}", uri.to_string(), e);
             }
         };
 
-        info!("Successfully connected");
+        info!("successfully connected");
 
         let (mut receiver, mut sender) = _client.split().unwrap();
     
@@ -164,7 +153,7 @@ impl RemoteWsInternal {
                 };
                 match message {
                     OwnedMessage::Close(_) => {
-                        //let _ = sender.send_message(&message);
+                        let _ = sender.send_message(&message);
                         // If it's a close message, just send it and then return.
                         return;
                     }
@@ -191,15 +180,14 @@ impl RemoteWsInternal {
                 let message = match message {
                     Ok(m) => m,
                     Err(e) => {
-                        debug!("Receive Loop: {:?}", e);
-                        
+                        debug!("error receiving message: {:?}", e);
                         let _ = tx_1.send(OwnedMessage::Close(None));
                         return;
                     }
                 };
                 match message {
                     OwnedMessage::Close(_) => {
-                        debug!("CLOSE");
+                        debug!("close message");
                         // Got a close message, so send a close message and return
                         let _ = tx_1.send(OwnedMessage::Close(None));
                         return;
@@ -213,9 +201,9 @@ impl RemoteWsInternal {
 
                             debug!("new volume {}, conv: {}", volume, new_volume);
 
-                            // let ref spirc = self.spirc;
-                            // spirc.volume_set(new_volume as u16);
                             _spirc.volume_set(new_volume as u16);
+                        } else {
+                            debug!("msg: {}", text);
                         }
                     }
                     OwnedMessage::Ping(data) => {
@@ -223,7 +211,8 @@ impl RemoteWsInternal {
                             // Send a pong in response
                             Ok(()) => (),
                             Err(e) => {
-                                println!("Receive Loopp: {:?}", e);
+                                println!("error receiving ping message: {:?}", e);
+                                let _ = tx_1.send(OwnedMessage::Close(None));
                                 return;
                             }
                         }
@@ -232,19 +221,20 @@ impl RemoteWsInternal {
                     _ => debug!("Receive Loopx: {:?}", message),
                 }
             }
-
-            debug!("exit rx loop");
         });
 
         self.rx_thread_handle = Some(_rx_handle);
 
-        // let power_param = json!("On");
-        // self.send_command("setPowerState".to_string(), power_param);
-
+        // Set initial volume, we first need to be connected.
         self.handle_event(PlayerEvent::VolumeSet { volume: self.config.volume });
 
-        let param = json!("TAPE");
-        self.send_command("setInputSource".to_string(), param);
+        if let Some(ref input_source) = self.config.input_source {
+            let param = json!(input_source);
+            self.send_command("setInputSource".to_string(), param);
+        }
+
+        // let param = json!(null);
+        // self.send_command("getContext".to_string(), param);
     }
 
     fn handle_event(&mut self, event: PlayerEvent) {

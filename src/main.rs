@@ -86,7 +86,7 @@ struct Setup {
     player_config: PlayerConfig,
     session_config: SessionConfig,
     connect_config: ConnectConfig,
-    remotews_config: RemoteWsConfig,
+    remotews_config: Option<RemoteWsConfig>,
     mixer_config: MixerConfig,
     credentials: Option<Credentials>,
     enable_discovery: bool,
@@ -196,6 +196,12 @@ fn setup(args: &[String]) -> Setup {
             "remote-ws",
             "The URI of the websocket server.",
             "WS_URI",
+        )
+        .optopt(
+            "",
+            "input-source",
+            "The input source where your music plays on.",
+            "INPUT_SOURCE",
         );
 
     let matches = match opts.parse(&args[1..]) {
@@ -355,12 +361,33 @@ fn setup(args: &[String]) -> Setup {
         }
     };
 
-    let remotews_config = {
-        RemoteWsConfig {
-            uri: matches.opt_str("remote-ws").unwrap_or(String::from("none")),
+    let input_source = matches.opt_str("input-source");
+
+    let mut remotews_config = None;
+    let remotews_uri = matches.opt_str("remote-ws");
+    if !remotews_uri.is_none(){
+        remotews_config = Some(RemoteWsConfig {
+            uri: remotews_uri.unwrap(),
             volume: initial_volume,
-        }
+            input_source: input_source,
+        })
     };
+
+    // let remotews_config = {
+    //     RemoteWsConfig {
+    //         uri: matches.opt_str("remote-ws").unwrap_or(String::from("none")),
+    //         volume: initial_volume,
+    //         input_source: input_source,
+    //     }
+    // };
+
+    // let remotews_config = {
+    //     RemoteWsConfig {
+    //         uri: matches.opt_str("remote-ws").unwrap_or(String::from("none")),
+    //         volume: initial_volume,
+    //         input_source: input_source,
+    //     }
+    // };
 
     let enable_discovery = !matches.opt_present("disable-discovery");
 
@@ -386,7 +413,7 @@ struct Main {
     player_config: PlayerConfig,
     session_config: SessionConfig,
     connect_config: ConnectConfig,
-    remotews_config: RemoteWsConfig,
+    remotews_config: Option<RemoteWsConfig>,
     backend: fn(Option<String>) -> Box<dyn Sink>,
     device: Option<String>,
     mixer: fn(Option<MixerConfig>) -> Box<dyn Mixer>,
@@ -496,7 +523,6 @@ impl Future for Main {
                     let mixer = (self.mixer)(Some(mixer_config));
                     let player_config = self.player_config.clone();
                     let connect_config = self.connect_config.clone();
-                    let remotews_config = self.remotews_config.clone();
 
                     let audio_filter = mixer.get_audio_filter();
                     let backend = self.backend;
@@ -510,13 +536,15 @@ impl Future for Main {
 
                     let spirc_ = Arc::new(spirc);
 
-                    let remote_ws = RemoteWs::new(remotews_config, spirc_.clone(), event_channel);
+                    if let Some(ref mut remotews_config) = self.remotews_config {
+                        let remote_ws = RemoteWs::new(remotews_config.clone(), spirc_.clone(), event_channel);
+                        self.remote_ws = Some(remote_ws);
+                    }
 
                     self.spirc = Some(spirc_);
                     self.spirc_task = Some(spirc_task);
                     // self.player_event_channel = Some(event_channel);
                     // self.player_event_channel = None;
-                    self.remote_ws = Some(remote_ws);
 
                     progress = true;
                 }
