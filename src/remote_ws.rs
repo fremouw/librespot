@@ -1,6 +1,5 @@
 use std;
 use log::{debug, error, info};
-use librespot::core::session::Session;
 use librespot::playback::player::{PlayerEvent, PlayerEventChannel};
 use std::sync::Arc;
 use std::{thread, time};
@@ -18,6 +17,7 @@ use std::net::TcpStream;
 #[derive(Clone, Debug)]
 pub struct RemoteWsConfig {
     pub uri: String,
+    pub volume: u16,
 }
 
 pub struct RemoteWs {
@@ -29,7 +29,6 @@ struct RemoteWsInternal {
     spirc: Arc<Spirc>,
     event_channel: PlayerEventChannel,
     rpc_next_id: i64,
-    ws_reconnect_count: i32,
     ws_tx: Option<std::sync::mpsc::Sender<websocket::OwnedMessage>>,
     tx_thread_handle: Option<thread::JoinHandle<()>>,
     rx_thread_handle: Option<thread::JoinHandle<()>>,
@@ -49,7 +48,6 @@ impl RemoteWs {
                 spirc: spirc,
                 event_channel: event_channel,
                 rpc_next_id: 1,
-                ws_reconnect_count: 0,
                 ws_tx: None,
                 tx_thread_handle: None,
                 rx_thread_handle: None,
@@ -239,6 +237,8 @@ impl RemoteWsInternal {
         });
 
         self.rx_thread_handle = Some(_rx_handle);
+
+        self.handle_event(PlayerEvent::VolumeSet { volume: self.config.volume });
     }
 
     fn handle_event(&mut self, event: PlayerEvent) {
@@ -276,7 +276,6 @@ impl RemoteWsInternal {
                 });
         
                 if let Some(ref mut ws_tx) = self.ws_tx {
-                    // ws_tx.send(OwnedMessage::Text(_cmd.to_string()));
                     match ws_tx.send(OwnedMessage::Text(_cmd.to_string())) {
                         Ok(()) => (),
 						Err(e) => {

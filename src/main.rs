@@ -358,6 +358,7 @@ fn setup(args: &[String]) -> Setup {
     let remotews_config = {
         RemoteWsConfig {
             uri: matches.opt_str("remote-ws").unwrap_or(String::from("none")),
+            volume: initial_volume,
         }
     };
 
