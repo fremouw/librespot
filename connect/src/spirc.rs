@@ -1001,7 +1001,7 @@ impl SpircTask {
     }
 
     fn handle_volume_up(&mut self) {
-        let mut volume: u32 = self.device.get_volume() as u32 + 2048;
+        let mut volume: u32 = self.device.get_volume() as u32 + 655;
         if volume > 0xFFFF {
             volume = 0xFFFF;
         }
@@ -1009,7 +1009,7 @@ impl SpircTask {
     }
 
     fn handle_volume_down(&mut self) {
-        let mut volume: i32 = self.device.get_volume() as i32 - 2048;
+        let mut volume: i32 = self.device.get_volume() as i32 - 655;
         if volume < 0 {
             volume = 0;
         }
