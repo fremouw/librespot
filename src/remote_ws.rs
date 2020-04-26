@@ -10,7 +10,7 @@ use websocket::client::ClientBuilder;
 use websocket::{Message, OwnedMessage};
 use url::Url;
 use serde_json::json;
-use serde_json::Value;
+use serde_json::{Value, Map};
 
 #[derive(Clone, Debug)]
 pub struct RemoteWsConfig {
@@ -203,7 +203,8 @@ impl RemoteWsInternal {
                             debug!("new volume {}, conv: {}", volume, new_volume);
 
                             _spirc.volume_set(new_volume as u16);
-                        } else {
+                        } 
+                        else {
                             debug!("msg: {}", text);
                         }
                     }
@@ -226,16 +227,19 @@ impl RemoteWsInternal {
 
         self.rx_thread_handle = Some(_rx_handle);
 
-        // Set initial volume, we first need to be connected.
-        self.handle_event(PlayerEvent::VolumeSet { volume: self.config.volume });
+        let converted_volume = f64::from(self.config.volume) / f64::from(u16::max_value()) * 100.0;
+        
+        let mut param = Map::new();
 
-        if let Some(ref input_source) = self.config.input_source {
-            let param = json!(input_source);
-            self.send_command("setInputSource".to_string(), param);
+        param.insert("state".to_string(), json!("On".to_string()));
+        param.insert("volume".to_string(), json!(converted_volume.round() as u16));
+        param.insert("muted".to_string(), json!(false));
+
+        if let Some(ref _input_source) = self.config.input_source {
+            param.insert("inputSource".to_string(), json!(_input_source));
         }
 
-        // let param = json!(null);
-        // self.send_command("getContext".to_string(), param);
+        self.send_command("setContext".to_string(), Value::Object(param));
     }
 
     fn handle_event(&mut self, event: PlayerEvent) {
