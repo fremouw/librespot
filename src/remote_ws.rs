@@ -175,7 +175,10 @@ impl RemoteWsInternal {
         self.tx_thread_handle = Some(_tx_handle);
 
         let _spirc = self.spirc.clone();
+        let _input_source = self.config.input_source.clone();
         let _rx_handle = thread::spawn(move || {
+            // let mut current_input_source: String = "".to_string();
+
             // Receive loop
             for message in receiver.incoming_messages() {
                 let message = match message {
@@ -203,7 +206,38 @@ impl RemoteWsInternal {
                             debug!("new volume {}, conv: {}", volume, new_volume);
 
                             _spirc.volume_set(new_volume as u16);
-                        } 
+                        }
+                        else if v["method"] == "inputSourceChanged" {
+                            let source = v["params"].as_str().unwrap();
+                            
+                            // current_input_source = source.to_string().clone();
+
+                            if let Some(ref input_source__) = _input_source {
+                                if source != input_source__ {
+                                    _spirc.pause();
+                                } 
+                            }
+                        }
+                        else if v["method"] == "powerStateChanged" {
+                            let state = v["params"].as_str().unwrap();
+
+                            if state == "Standby" || state == "Off" {
+                                _spirc.pause();
+                            }
+                        }
+                        else if v["method"] == "muteStateChanged" {
+                            let _mute = v["params"].as_bool().unwrap();
+
+                            // if let Some(ref input_source__) = _input_source {
+                            //     if current_input_source == input_source__ {
+                            //     //     if mute {
+                            //     //         _spirc.pause();
+                            //     //     } else {
+                            //     //         _spirc.play();
+                            //     //     }
+                            //     }
+                            // }
+                        }
                         else {
                             debug!("msg: {}", text);
                         }
