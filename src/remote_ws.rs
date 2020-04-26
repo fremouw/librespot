@@ -228,6 +228,8 @@ impl RemoteWsInternal {
                         else if v["method"] == "muteStateChanged" {
                             let _mute = v["params"].as_bool().unwrap();
 
+                            debug!("msg: {}", text);
+
                             // if let Some(ref input_source__) = _input_source {
                             //     if current_input_source == input_source__ {
                             //     //     if mute {
