@@ -153,6 +153,7 @@ impl RemoteWsInternal {
                 };
                 match message {
                     OwnedMessage::Close(_) => {
+                        debug!("close message");
                         let _ = sender.send_message(&message);
                         // If it's a close message, just send it and then return.
                         return;
@@ -211,7 +212,7 @@ impl RemoteWsInternal {
                             // Send a pong in response
                             Ok(()) => (),
                             Err(e) => {
-                                println!("error receiving ping message: {:?}", e);
+                                debug!("error receiving ping message: {:?}", e);
                                 let _ = tx_1.send(OwnedMessage::Close(None));
                                 return;
                             }
