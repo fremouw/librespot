@@ -177,7 +177,11 @@ impl RemoteWsInternal {
         let _spirc = self.spirc.clone();
         let _input_source = self.config.input_source.clone();
         let _rx_handle = thread::spawn(move || {
-            // let mut current_input_source: String = "".to_string();
+            let mut current_input_source: String = "".to_string();
+
+            if let Some(ref __input_source) = _input_source {
+                current_input_source = __input_source.clone();
+            }
 
             // Receive loop
             for message in receiver.incoming_messages() {
@@ -210,10 +214,10 @@ impl RemoteWsInternal {
                         else if v["method"] == "inputSourceChanged" {
                             let source = v["params"].as_str().unwrap();
                             
-                            // current_input_source = source.to_string().clone();
+                            current_input_source = source.to_string().clone();
 
-                            if let Some(ref input_source__) = _input_source {
-                                if source != input_source__ {
+                            if let Some(ref __input_source) = _input_source {
+                                if source != __input_source {
                                     _spirc.pause();
                                 } 
                             }
@@ -228,17 +232,15 @@ impl RemoteWsInternal {
                         else if v["method"] == "muteStateChanged" {
                             let _mute = v["params"].as_bool().unwrap();
 
-                            debug!("msg: {}", text);
-
-                            // if let Some(ref input_source__) = _input_source {
-                            //     if current_input_source == input_source__ {
-                            //     //     if mute {
-                            //     //         _spirc.pause();
-                            //     //     } else {
-                            //     //         _spirc.play();
-                            //     //     }
-                            //     }
-                            // }
+                            if let Some(ref __input_source) = _input_source {
+                                if current_input_source.as_str() == __input_source {
+                                    if _mute {
+                                        _spirc.pause();
+                                    } else {
+                                        _spirc.play();
+                                    }
+                                }
+                            }
                         }
                         else {
                             debug!("msg: {}", text);
