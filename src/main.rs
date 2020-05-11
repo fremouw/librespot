@@ -55,9 +55,9 @@ fn setup_logging(verbose: bool) {
         }
         Err(_) => {
             if verbose {
-                builder.parse_filters("mdns=info,librespot=trace");
+                builder.parse_filters("libmdns=info,librespot=trace");
             } else {
-                builder.parse_filters("mdns=info,librespot=info");
+                builder.parse_filters("libmdns=info,librespot=info");
             }
             builder.init();
         }
@@ -603,7 +603,7 @@ impl Future for Main {
 
             // if let Some(ref mut player_event_channel) = self.player_event_channel {
             //     if let Async::Ready(Some(event)) = player_event_channel.poll().unwrap() {
-            //         println!("Got event");
+            //         progress = true;
             //         if let Some(ref mut remote_ws) = self.remote_ws {
             //             remote_ws.handle_event(event);
             //         }

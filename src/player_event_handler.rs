@@ -35,6 +35,32 @@ pub fn run_program_on_events(event: PlayerEvent, onevent: &str) -> Option<io::Re
         }
         PlayerEvent::VolumeSet { volume, .. } => {
             println!("Volume set: {}", volume);
+		}
+        PlayerEvent::Playing {
+            track_id,
+            duration_ms,
+            position_ms,
+            ..
+        } => {
+            env_vars.insert("PLAYER_EVENT", "playing".to_string());
+            env_vars.insert("TRACK_ID", track_id.to_base62());
+            env_vars.insert("DURATION_MS", duration_ms.to_string());
+            env_vars.insert("POSITION_MS", position_ms.to_string());
+        }
+        PlayerEvent::Paused {
+            track_id,
+            duration_ms,
+            position_ms,
+            ..
+        } => {
+            env_vars.insert("PLAYER_EVENT", "paused".to_string());
+            env_vars.insert("TRACK_ID", track_id.to_base62());
+            env_vars.insert("DURATION_MS", duration_ms.to_string());
+            env_vars.insert("POSITION_MS", position_ms.to_string());
+        }
+        PlayerEvent::VolumeSet { volume } => {
+            env_vars.insert("PLAYER_EVENT", "volume_set".to_string());
+            env_vars.insert("VOLUME", volume.to_string());
         }
         _ => return None,
     }
