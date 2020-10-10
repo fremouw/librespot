@@ -15,7 +15,7 @@ use url::Url;
 
 use librespot::core::authentication::{get_credentials, Credentials};
 use librespot::core::cache::Cache;
-use librespot::core::config::{ConnectConfig, DeviceType, SessionConfig};
+use librespot::core::config::{ConnectConfig, DeviceType, SessionConfig, VolumeCtrl};
 use librespot::core::session::Session;
 use librespot::core::version;
 
@@ -27,7 +27,7 @@ use librespot::playback::mixer::{self, Mixer, MixerConfig};
 use librespot::playback::player::{Player, PlayerEvent};
 
 mod player_event_handler;
-use crate::player_event_handler::run_program_on_events;
+use crate::player_event_handler::{emit_sink_event, run_program_on_events};
 
 use std::sync::Arc;
 mod remote_ws;
@@ -92,6 +92,7 @@ struct Setup {
     enable_discovery: bool,
     zeroconf_port: u16,
     player_event_program: Option<String>,
+    emit_sink_events: bool,
 }
 
 fn setup(args: &[String]) -> Setup {
@@ -116,6 +117,7 @@ fn setup(args: &[String]) -> Setup {
             "Run PROGRAM when playback is about to begin.",
             "PROGRAM",
         )
+        .optflag("", "emit-sink-events", "Run program set by --onevent before sink is opened and after it is closed.")
         .optflag("v", "verbose", "Enable verbose output")
         .optopt("u", "username", "Username to sign in with", "USERNAME")
         .optopt("p", "password", "Password", "PASSWORD")
@@ -153,6 +155,11 @@ fn setup(args: &[String]) -> Setup {
             "Alsa mixer index, Index of the cards mixer. Defaults to 0",
             "MIXER_INDEX",
         )
+        .optflag(
+            "",
+            "mixer-linear-volume",
+            "Disable alsa's mapped volume scale (cubic). Default false",
+        )
         .optopt(
             "",
             "initial-volume",
@@ -176,10 +183,11 @@ fn setup(args: &[String]) -> Setup {
             "Pregain (dB) applied by volume normalisation",
             "PREGAIN",
         )
-        .optflag(
+        .optopt(
             "",
-            "linear-volume",
-            "increase volume linear instead of logarithmic.",
+            "volume-ctrl",
+            "Volume control type - [linear, log, fixed]. Default is logarithmic",
+            "VOLUME_CTRL"
         )
         .optflag(
             "",
@@ -255,6 +263,7 @@ fn setup(args: &[String]) -> Setup {
             .opt_str("mixer-index")
             .map(|index| index.parse::<u32>().unwrap())
             .unwrap_or(0),
+        mapped_volume: !matches.opt_present("mixer-linear-volume"),
     };
 
     let use_audio_cache = !matches.opt_present("disable-audio-cache");
@@ -352,11 +361,17 @@ fn setup(args: &[String]) -> Setup {
             .map(|device_type| DeviceType::from_str(device_type).expect("Invalid device type"))
             .unwrap_or(DeviceType::default());
 
+        let volume_ctrl = matches
+            .opt_str("volume-ctrl")
+            .as_ref()
+            .map(|volume_ctrl| VolumeCtrl::from_str(volume_ctrl).expect("Invalid volume ctrl type"))
+            .unwrap_or(VolumeCtrl::default());
+
         ConnectConfig {
             name: name,
             device_type: device_type,
             volume: initial_volume,
-            linear_volume: matches.opt_present("linear-volume"),
+            volume_ctrl: volume_ctrl,
             autoplay: matches.opt_present("autoplay"),
         }
     };
@@ -405,6 +420,7 @@ fn setup(args: &[String]) -> Setup {
         mixer: mixer,
         mixer_config: mixer_config,
         player_event_program: matches.opt_str("onevent"),
+        emit_sink_events: matches.opt_present("emit-sink-events"),
     }
 }
 
@@ -433,7 +449,8 @@ struct Main {
 
     // player_event_channel: Option<UnboundedReceiver<PlayerEvent>>,
     player_event_program: Option<String>,
-    remote_ws: Option<RemoteWs>,
+    emit_sink_events: bool,
+	remote_ws: Option<RemoteWs>,
 }
 
 impl Main {
@@ -461,7 +478,7 @@ impl Main {
 
             // player_event_channel: None,
             player_event_program: setup.player_event_program,
-
+            emit_sink_events: setup.emit_sink_events,
             remote_ws: None,
         };
 
@@ -532,11 +549,20 @@ impl Future for Main {
                             (backend)(device)
                         });
 
-                    let (spirc, spirc_task) = Spirc::new(connect_config, session.clone(), player, mixer);
+                    if self.emit_sink_events {
+                        if let Some(player_event_program) = &self.player_event_program {
+                            let player_event_program = player_event_program.clone();
+                            player.set_sink_event_callback(Some(Box::new(move |sink_status| {
+                                emit_sink_event(sink_status, &player_event_program)
+                            })));
+                        }
+                    }
 
-                    let spirc_ = Arc::new(spirc);
+                    let (spirc, spirc_task) = Spirc::new(connect_config, session, player, mixer);
 
-                    if let Some(ref mut remotews_config) = self.remotews_config {
+					let spirc_ = Arc::new(spirc);
+
+					if let Some(ref mut remotews_config) = self.remotews_config {
                         let remote_ws = RemoteWs::new(remotews_config.clone(), spirc_.clone(), event_channel);
                         self.remote_ws = Some(remote_ws);
                     }
@@ -544,7 +570,6 @@ impl Future for Main {
                     self.spirc = Some(spirc_);
                     self.spirc_task = Some(spirc_task);
                     // self.player_event_channel = Some(event_channel);
-                    // self.player_event_channel = None;
 
                     progress = true;
                 }
