@@ -47,7 +47,7 @@ On Fedora systems, the following command will install these dependencies :
 sudo dnf install alsa-lib-devel make gcc
 ```
 
-librespot currently offers the a selection of [audio backends](https://github.com/librespot-org/librespot/wiki/Audio-Backends).
+librespot currently offers the following selection of [audio backends](https://github.com/librespot-org/librespot/wiki/Audio-Backends).
 ```
 Rodio (default)
 ALSA
@@ -63,6 +63,12 @@ Once you've installed the dependencies and cloned this repository you can build 
 ```shell
 cargo build --release
 ```
+
+# Packages
+
+librespot is also available via official package system on various operating systems such as Linux, FreeBSD, NetBSD. [Repology](https://repology.org/project/librespot/versions) offers a good overview.
+
+[![Packaging status](https://repology.org/badge/vertical-allrepos/librespot.svg)](https://repology.org/project/librespot/versions)
 
 ## Usage
 A sample program implementing a headless Spotify Connect receiver is provided.
