@@ -429,8 +429,8 @@ impl AudioFile {
             complete_rx
                 .map(move |mut file| {
                     if let Some(cache) = session_.cache() {
-                        cache.save_file(file_id, &mut file);
                         debug!("File {} complete, saving to cache", file_id);
+                        cache.save_file(file_id, &mut file);
                     } else {
                         debug!("File {} complete", file_id);
                     }
@@ -457,6 +457,13 @@ impl AudioFile {
                     file_size: file.metadata().unwrap().len() as usize,
                 };
             }
+        }
+    }
+
+    pub fn is_cached(&self) -> bool {
+        match self {
+            AudioFile::Cached { .. } => true,
+            _ => false,
         }
     }
 }

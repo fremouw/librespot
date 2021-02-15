@@ -3,9 +3,9 @@ use futures::{Async, Future, Poll, Stream};
 use log::{error, info, trace, warn};
 use sha1::{Digest, Sha1};
 use std::env;
-use std::io::{self, stderr, Write};
+use std::io::{stderr, Write};
 use std::mem;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::exit;
 use std::str::FromStr;
 use std::time::Instant;
@@ -16,13 +16,13 @@ use url::Url;
 use librespot::core::authentication::{get_credentials, Credentials};
 use librespot::core::cache::Cache;
 use librespot::core::config::{ConnectConfig, DeviceType, SessionConfig, VolumeCtrl};
-use librespot::core::session::Session;
+use librespot::core::session::{AuthenticationError, Session};
 use librespot::core::version;
 
 use librespot::connect::discovery::{discovery, DiscoveryStream};
 use librespot::connect::spirc::{Spirc, SpircTask};
 use librespot::playback::audio_backend::{self, Sink, BACKENDS};
-use librespot::playback::config::{Bitrate, PlayerConfig};
+use librespot::playback::config::{Bitrate, NormalisationType, PlayerConfig};
 use librespot::playback::mixer::{self, Mixer, MixerConfig};
 use librespot::playback::player::{Player, PlayerEvent};
 
@@ -184,6 +184,12 @@ fn setup(args: &[String]) -> Setup {
         )
         .optopt(
             "",
+            "normalisation-gain-type",
+            "Specify the normalisation gain type to use - [track, album]. Default is album.",
+            "GAIN_TYPE",
+        )
+        .optopt(
+            "",
             "normalisation-pregain",
             "Pregain (dB) applied by volume normalisation",
             "PREGAIN",
@@ -271,18 +277,34 @@ fn setup(args: &[String]) -> Setup {
         mapped_volume: !matches.opt_present("mixer-linear-volume"),
     };
 
-    let use_audio_cache = !matches.opt_present("disable-audio-cache");
+    let cache = {
+        let audio_dir;
+        let system_dir;
+        if matches.opt_present("disable-audio-cache") {
+            audio_dir = None;
+            system_dir = matches
+                .opt_str("system-cache")
+                .or_else(|| matches.opt_str("c"))
+                .map(|p| p.into());
+        } else {
+            let cache_dir = matches.opt_str("c");
+            audio_dir = cache_dir
+                .as_ref()
+                .map(|p| AsRef::<Path>::as_ref(p).join("files"));
+            system_dir = matches
+                .opt_str("system-cache")
+                .or_else(|| cache_dir)
+                .map(|p| p.into());
+        }
 
-    let cache_directory = matches.opt_str("c").unwrap_or(String::from(""));
-    let system_cache_directory = matches
-        .opt_str("system-cache")
-        .unwrap_or(String::from(cache_directory.clone()));
-
-    let cache = Some(Cache::new(
-        PathBuf::from(cache_directory),
-        PathBuf::from(system_cache_directory),
-        use_audio_cache,
-    ));
+        match Cache::new(system_dir, audio_dir) {
+            Ok(cache) => Some(cache),
+            Err(e) => {
+                warn!("Cannot create cache: {}", e);
+                None
+            }
+        }
+    };
 
     let initial_volume = matches
         .opt_str("initial-volume")
@@ -355,10 +377,18 @@ fn setup(args: &[String]) -> Setup {
             .as_ref()
             .map(|bitrate| Bitrate::from_str(bitrate).expect("Invalid bitrate"))
             .unwrap_or(Bitrate::default());
+        let gain_type = matches
+            .opt_str("normalisation-gain-type")
+            .as_ref()
+            .map(|gain_type| {
+                NormalisationType::from_str(gain_type).expect("Invalid normalisation type")
+            })
+            .unwrap_or(NormalisationType::default());
         PlayerConfig {
             bitrate: bitrate,
             gapless: !matches.opt_present("disable-gapless"),
             normalisation: matches.opt_present("enable-volume-normalisation"),
+            normalisation_type: gain_type,
             normalisation_pregain: matches
                 .opt_str("normalisation-pregain")
                 .map(|pregain| pregain.parse::<f32>().expect("Invalid pregain float value"))
@@ -453,7 +483,7 @@ struct Main {
 
     spirc: Option<Arc<Spirc>>,
     spirc_task: Option<SpircTask>,
-    connect: Box<dyn Future<Item = Session, Error = io::Error>>,
+    connect: Box<dyn Future<Item = Session, Error = AuthenticationError>>,
 
     shutdown: bool,
     last_credentials: Option<Credentials>,
