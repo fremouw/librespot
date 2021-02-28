@@ -201,49 +201,57 @@ impl RemoteWsInternal {
                         return;
                     }
                     OwnedMessage::Text(text) => {
-                        let v: Value = serde_json::from_str(&text).unwrap();
+                        let json = text.trim_end_matches(char::from(0));
+                        let res = serde_json::from_str::<Value>(&json);
 
-                        if v["method"] == "volumeChanged" {
-                            let volume: f64 = v["params"].as_f64().unwrap();
-                            let new_volume = (volume * f64::from(u16::max_value())) / 100.0;
+                        match res {
+                            Ok(v) => { 
+                                if v["method"] == "volumeChanged" {
+                                    let volume: f64 = v["params"].as_f64().unwrap();
+                                    let new_volume = (volume * f64::from(u16::max_value())) / 100.0;
 
-                            debug!("new volume {}, conv: {}", volume, new_volume);
+                                    debug!("new volume {}, conv: {}", volume, new_volume);
 
-                            _spirc.volume_set(new_volume as u16);
-                        }
-                        else if v["method"] == "inputSourceChanged" {
-                            let source = v["params"].as_str().unwrap();
-                            
-                            current_input_source = source.to_string().clone();
+                                    _spirc.volume_set(new_volume as u16);
+                                }
+                                else if v["method"] == "inputSourceChanged" {
+                                    let source = v["params"].as_str().unwrap();
 
-                            if let Some(ref __input_source) = _input_source {
-                                if source != __input_source {
-                                    _spirc.pause();
-                                } 
-                            }
-                        }
-                        else if v["method"] == "powerStateChanged" {
-                            let state = v["params"].as_str().unwrap();
+                                    current_input_source = source.to_string().clone();
 
-                            if state == "Standby" || state == "Off" {
-                                _spirc.pause();
-                            }
-                        }
-                        else if v["method"] == "muteStateChanged" {
-                            let _mute = v["params"].as_bool().unwrap();
-
-                            if let Some(ref __input_source) = _input_source {
-                                if current_input_source.as_str() == __input_source {
-                                    if _mute {
-                                        _spirc.pause();
-                                    } else {
-                                        _spirc.play();
+                                    if let Some(ref __input_source) = _input_source {
+                                        if source != __input_source {
+                                            _spirc.pause();
+                                        } 
                                     }
                                 }
-                            }
-                        }
-                        else {
-                            debug!("msg: {}", text);
+                                else if v["method"] == "powerStateChanged" {
+                                    let state = v["params"].as_str().unwrap();
+
+                                    if state == "Standby" || state == "Off" {
+                                        _spirc.pause();
+                                    }
+                                }
+                                else if v["method"] == "muteStateChanged" {
+                                    let _mute = v["params"].as_bool().unwrap();
+
+                                    if let Some(ref __input_source) = _input_source {
+                                        if current_input_source.as_str() == __input_source {
+                                            if _mute {
+                                                _spirc.pause();
+                                            } else {
+                                                _spirc.play();
+                                            }
+                                        }
+                                    }
+                                }
+                                else {
+                                    debug!("msg: {}", text);
+                                }
+                            },
+                            Err(e) => {
+                                println!("error in Json message: {:?}", e);
+                            },
                         }
                     }
                     OwnedMessage::Ping(data) => {
