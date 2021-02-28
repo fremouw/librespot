@@ -840,7 +840,7 @@ impl SpircTask {
                 self.handle_play()
             }
             SpircPlayStatus::Playing { .. } | SpircPlayStatus::LoadingPlay { .. } => {
-                self.handle_play()
+                self.handle_pause()
             }
             _ => (),
         }
@@ -1061,7 +1061,7 @@ impl SpircTask {
 
         self.device.set_volume(volume as u32);
         if let Some(cache) = self.session.cache() {
-            cache.save_volume(Volume { volume })
+            cache.save_volume(volume)
         }
     }
     

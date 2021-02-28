@@ -198,7 +198,7 @@ fn setup(args: &[String]) -> Setup {
             "",
             "volume-ctrl",
             "Volume control type - [linear, log, fixed]. Default is logarithmic",
-            "VOLUME_CTRL"
+            "VOLUME_CTRL",
         )
         .optflag(
             "",
@@ -209,6 +209,11 @@ fn setup(args: &[String]) -> Setup {
             "",
             "disable-gapless",
             "disable gapless playback.",
+        )
+	    .optflag(
+            "",
+            "passthrough",
+            "Pass raw stream to output, only works for \"pipe\".",
         )
         .optopt(
             "",
@@ -371,6 +376,8 @@ fn setup(args: &[String]) -> Setup {
         }
     };
 
+    let passthrough = matches.opt_present("passthrough");
+
     let player_config = {
         let bitrate = matches
             .opt_str("b")
@@ -393,6 +400,7 @@ fn setup(args: &[String]) -> Setup {
                 .opt_str("normalisation-pregain")
                 .map(|pregain| pregain.parse::<f32>().expect("Invalid pregain float value"))
                 .unwrap_or(PlayerConfig::default().normalisation_pregain),
+            passthrough,
         }
     };
 
